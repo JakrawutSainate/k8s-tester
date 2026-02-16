@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: locust-script
+data:
+  locustfile.py: |
+    from locust import HttpUser, task, between
+    class QuickstartUser(HttpUser):
+        wait_time = between(1, 2)
+        @task
+        def hello_world(self):
+            # Target URL is pulled from env if not specified, 
+            # or we can use self.client.get which uses --host
+            self.client.get("/")
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: locust
+  labels:
+    app: locust
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: locust
+  template:
+    metadata:
+      labels:
+        app: locust
+    spec:
+      containers:
+        - name: locust
+          image: locustio/locust
+          # Removed manual command/args to rely on default behavior + mounted script
+          env:
+            - name: TARGET_URL
+              value: "http://target-app-svc"
+            - name: LOCUST_HOST
+              value: "http://target-app-svc"
+          volumeMounts:
+            - name: script-volume
+              mountPath: /home/locust
+          ports:
+            - containerPort: 8654
+              name: web-ui
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: script-volume
+          configMap:
+            name: locust-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: locust-ui-svc
+spec:
+  selector:
+    app: locust
+  ports:
+    - protocol: TCP
+      port: 8654
+      targetPort: 8654
+  type: ClusterIP
